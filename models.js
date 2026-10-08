@@ -7,6 +7,7 @@ export const models = {
 			'WP Encode': 'Encode',
 			'WP Decode': 'Decode',
 			PLAY: 'Decode',
+			'KILOVIEW-N5 (Program)': 'Decode',
 		},
 	},
 }
@@ -19,6 +20,6 @@ export function getStaticMode(format) {
 	const f = String(format).toLowerCase()
 	if (f.includes('decode')) return 'Decode'
 	if (f.includes('encode')) return 'Encode'
-	if (/\bplay\b/.test(f)) return 'Decode'
+	if (/\bplay\b/.test(f) || f.startsWith('kiloview-n5')) return 'Decode'
 	return undefined
 }
