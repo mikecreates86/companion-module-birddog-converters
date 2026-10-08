@@ -17,36 +17,66 @@ class BirdDogInstance extends InstanceBase {
 	async init(config) {
 		this.config = config
 		this.legacy = null
+		this.device = {}
+		this.destroyed = false
 		this.updateStatus('connecting')
 
+		this.stopTimers()
+		this.closeWebsocket()
+
 		if (this.config?.host) {
-			this.device = {}
-
-			if (this.ws !== undefined) {
-				this.ws.close(1000)
-				delete this.ws
-			}
-
 			this.checkConnection()
+		} else {
+			this.updateStatus('bad_config', 'No host configured')
 		}
 	}
 
 	async destroy() {
+		this.destroyed = true
 		this.device = {}
-
-		if (this.ws !== undefined) {
-			this.ws.close(1000)
-			delete this.ws
-		}
-
-		if (this.websocketPoll) {
-			clearInterval(this.websocketPoll)
-		}
+		this.stopTimers()
+		this.closeWebsocket()
 	}
 
 	async configUpdated(config) {
-		this.config = config
-		this.init(config)
+		await this.init(config)
+	}
+
+	stopTimers() {
+		if (this.retryTimer) {
+			clearTimeout(this.retryTimer)
+			delete this.retryTimer
+		}
+		if (this.websocketPoll) {
+			clearTimeout(this.websocketPoll)
+			delete this.websocketPoll
+		}
+	}
+
+	// Detach and close the socket so a stale socket can never schedule reconnects
+	closeWebsocket() {
+		if (this.ws !== undefined) {
+			const ws = this.ws
+			delete this.ws
+			ws.removeAllListeners()
+			ws.on('error', () => {})
+			try {
+				ws.terminate()
+			} catch (e) {
+				//ignore
+			}
+		}
+	}
+
+	// Only ever one pending reconnect timer, with capped backoff
+	scheduleWebsocketReconnect() {
+		if (this.destroyed || this.websocketPoll) return
+		const delay = Math.min(5000 * 2 ** (this.wsFailures || 0), 60000)
+		this.wsFailures = (this.wsFailures || 0) + 1
+		this.websocketPoll = setTimeout(() => {
+			delete this.websocketPoll
+			this.initWebsocket()
+		}, delay)
 	}
 
 	getConfigFields() {
@@ -61,14 +91,29 @@ class BirdDogInstance extends InstanceBase {
 		]
 	}
 
+	scheduleConnectionRetry() {
+		if (this.destroyed || this.retryTimer) return
+		this.retryTimer = setTimeout(() => {
+			delete this.retryTimer
+			this.checkConnection()
+		}, 10000)
+	}
+
+	fetchWithTimeout(url, options = {}, timeout = 5000) {
+		const controller = new AbortController()
+		const timer = setTimeout(() => controller.abort(), timeout)
+		return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer))
+	}
+
 	checkConnection() {
-		fetch(`http://${this.config.host}:8080/about`)
+		this.fetchWithTimeout(`http://${this.config.host}:8080/about`)
 			.then((res) => {
 				if (res.status == 200) {
 					return res.json()
 				}
 			})
 			.then((data) => {
+				if (this.destroyed) return
 				if (data?.HostName) {
 					this.device.about = data
 					this.log('info', `Connected to ${data.HostName}`)
@@ -79,16 +124,16 @@ class BirdDogInstance extends InstanceBase {
 					this.log('info', `Connected to ${data.MyHostName}`)
 					this.updateStatus('ok')
 					this.openConnection()
+				} else {
+					this.updateStatus('connection_failure', 'Unexpected response from device')
+					this.scheduleConnectionRetry()
 				}
 			})
 			.catch((error) => {
-				let errorText = String(error)
-				if (errorText.match('ETIMEDOUT') || errorText.match('ENOTFOUND') || errorText.match('ECONNREFUSED')) {
-					this.updateStatus('bad_config')
-					this.log('error', 'Unable to connect to BirdDog converter. Check your device address in the module settings')
-				} else {
-					this.log('debug', errorText)
-				}
+				if (this.destroyed) return
+				this.updateStatus('connection_failure', 'Unable to connect to BirdDog converter')
+				this.log('debug', `Connection check failed: ${error}`)
+				this.scheduleConnectionRetry()
 			})
 	}
 
@@ -142,45 +187,34 @@ class BirdDogInstance extends InstanceBase {
 
 	sendCommand(cmd, type, params) {
 		let url = `http://${this.config.host}:8080/${cmd}`
-		let options = {}
+		let options = {
+			method: type,
+			headers: { 'Content-Type': 'application/json' },
+		}
 		if (type == 'PUT' || type == 'POST') {
-			options = {
-				method: type,
-				body: params != undefined ? JSON.stringify(params) : null,
-				headers: { 'Content-Type': 'application/json' },
-			}
-		} else {
-			options = {
-				method: type,
-				headers: { 'Content-Type': 'application/json' },
-			}
+			options.body = params != undefined ? JSON.stringify(params) : null
 		}
 
-		fetch(url, options)
-			.then((res) => {
-				//this.processStatus(res)
-				if (res.status == 200) {
-					if (cmd === 'operationmode') {
-						this.processData(cmd, res.text())
-					} else {
-						return res.json()
-					}
+		this.fetchWithTimeout(url, options)
+			.then(async (res) => {
+				if (res.status != 200) return
+				if (cmd === 'operationmode') {
+					return (await res.text()).trim()
 				}
+				return res.json()
 			})
-			.then((json) => {
-				let data = json
+			.then((data) => {
+				if (this.destroyed) return
 				if (data?.success) {
 					//ignore success messages that do not have data
 				} else if (data?.success === false) {
 					this.log('warn', `Command failed: ${data.error}`)
-				} else {
-					if (data) {
-						this.processData(cmd, data)
-					}
+				} else if (data) {
+					this.processData(cmd, data)
 				}
 			})
 			.catch((error) => {
-				this.log('debug', error)
+				this.log('debug', `Command ${cmd} failed: ${error}`)
 			})
 	}
 
@@ -195,13 +229,13 @@ class BirdDogInstance extends InstanceBase {
 			})
 		} else if (cmd.match('List')) {
 			this.device.list = []
-			for (let [key, value] of Object.entries(data)) {
+			for (let key of Object.keys(data)) {
 				let name = key
 				this.device.list.push({ id: name, label: name })
-				this.initActions()
-				this.initFeedbacks()
-				this.initPresets()
 			}
+			this.initActions()
+			this.initFeedbacks()
+			this.initPresets()
 		} else if (cmd.match('connectTo')) {
 			this.device.decodeSource = data.sourceName
 			this.setVariableValues({
@@ -226,27 +260,29 @@ class BirdDogInstance extends InstanceBase {
 	}
 
 	initWebsocket() {
-		if (this.ws !== undefined) {
-			this.ws.close(1000)
-			delete this.ws
-		}
+		if (this.destroyed) return
+		this.closeWebsocket()
 
-		this.ws = new WebSocket(`ws://${this.config.host}:6790/`)
+		const ws = new WebSocket(`ws://${this.config.host}:6790/`, { handshakeTimeout: 5000 })
+		this.ws = ws
 
-		this.ws.on('open', () => {
+		ws.on('open', () => {
 			this.log('debug', `WebSocket connection opened`)
+			this.wsFailures = 0
 			this.updateStatus('ok')
 		})
 
-		this.ws.on('close', (code) => {
+		ws.on('close', (code) => {
 			this.log('debug', `WebSocket Connection closed with code ${code}`)
-			if (code !== 1000) {
+			if (this.ws !== ws) return
+			delete this.ws
+			if (!this.destroyed) {
 				this.updateStatus('connection_failure')
-				this.websocketPoll = setInterval(this.initWebsocket.bind(this), 5000)
+				this.scheduleWebsocketReconnect()
 			}
 		})
 
-		this.ws.on('message', (message) => {
+		ws.on('message', (message) => {
 			let data
 			try {
 				data = JSON.parse(message.toString())
@@ -256,7 +292,7 @@ class BirdDogInstance extends InstanceBase {
 			}
 		})
 
-		this.ws.on('error', (data) => {
+		ws.on('error', (data) => {
 			this.log('debug', `WebSocket error: ${data}`)
 		})
 	}
@@ -267,7 +303,7 @@ class BirdDogInstance extends InstanceBase {
 			if (key === 'vid_str_name' && value && value != this.device.decodeSource) {
 				this.device.decodeSource = value
 				updates.decode_source = value
-				this.checkFeedbacks('decodeSource')
+				this.checkFeedbacks('decodeSourceName')
 			} else if (key === 'vid_disp' && value != this.device.videoFormat) {
 				this.device.videoFormat = value
 				updates.video_format = value
