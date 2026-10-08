@@ -4,7 +4,7 @@ import { getPresets } from './presets.js'
 import { getVariables } from './variables.js'
 import { getFeedbacks } from './feedbacks.js'
 import { upgradeScripts } from './upgrades.js'
-import { models } from './models.js'
+import { models, getStaticMode } from './models.js'
 
 import fetch from 'node-fetch'
 import WebSocket from 'ws'
@@ -158,7 +158,10 @@ class BirdDogInstance extends InstanceBase {
 			if (models.operationmode.available.find((converter) => converter == device)) {
 				this.sendCommand('operationmode', 'GET')
 			} else {
-				let mode = models.operationmode.static[device]
+				let mode = getStaticMode(device)
+				if (!mode) {
+					this.log('warn', `Unrecognised device format "${device}", mode unknown`)
+				}
 				this.setVariableValues({ current_mode: mode ? mode : 'Unknown' })
 			}
 		} else {
