@@ -1,0 +1,58 @@
+name: Build and Release
+
+# Whenever the main branch changes, build the module package (the .tgz file
+# Companion imports) and publish it under Releases as the newest version.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish module package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Check the version number is higher than the last release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXISTING=$(gh release list --limit 200 --json tagName --jq '.[].tagName')
+          .github/scripts/check-version.sh "$EXISTING"
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Build the Companion module package
+        run: yarn companion-module-build
+
+      - name: Confirm the package is the real module
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          FILE="birddog-converters-${VERSION}.tgz"
+          test -f "$FILE" || { echo "ERROR: $FILE was not built"; exit 1; }
+          tar tzf "$FILE" | grep -q '^pkg/companion/manifest.json$' || { echo "ERROR: package has no manifest"; exit 1; }
+          tar tzf "$FILE" | grep -q '^pkg/main.js$' || { echo "ERROR: package has no main.js"; exit 1; }
+          PKGVER=$(tar xzf "$FILE" -O pkg/companion/manifest.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          [ "$PKGVER" = "$VERSION" ] || { echo "ERROR: package contains version $PKGVER, expected $VERSION"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if head -n 1 release-notes.md 2>/dev/null | grep -q "^# ${VERSION}\b"; then
+            tail -n +2 release-notes.md > notes.txt
+            gh release create "v${VERSION}" "$FILE" --title "Version ${VERSION}" --notes-file notes.txt --latest --target "$GITHUB_SHA"
+          else
+            gh release create "v${VERSION}" "$FILE" --title "Version ${VERSION}" --generate-notes --latest --target "$GITHUB_SHA"
+          fi
