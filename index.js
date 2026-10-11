@@ -5,6 +5,7 @@ import { getVariables } from './variables.js'
 import { getFeedbacks } from './feedbacks.js'
 import { upgradeScripts } from './upgrades.js'
 import { models, getStaticMode } from './models.js'
+import { SourceRecovery } from './recovery.js'
 
 import fetch from 'node-fetch'
 import WebSocket from 'ws'
@@ -24,6 +25,7 @@ class BirdDogInstance extends InstanceBase {
 
 		this.stopTimers()
 		this.closeWebsocket()
+		this.setupRecovery()
 
 		if (this.config?.host) {
 			this.checkConnection()
@@ -43,7 +45,33 @@ class BirdDogInstance extends InstanceBase {
 		await this.init(config)
 	}
 
+	setupRecovery() {
+		if (this.recovery) this.recovery.stop()
+		this.recovery = new SourceRecovery({
+			enabled: !!this.config?.autoRecover,
+			restartOnReturn: !!this.config?.restartOnReturn,
+			restartHours: Number(this.config?.restartHours) || 0,
+			isConnected: () => this.device?.sourceStatus === 'Connected',
+			log: (level, msg) => this.log(level, msg),
+			actions: {
+				refresh: () => {
+					if (!this.legacy) this.sendCommand('refresh', 'GET')
+					this.sendCommand('List', 'GET')
+				},
+				reselect: () => {
+					const source = this.device?.decodeSource
+					if (source) this.sendCommand('connectTo', 'POST', { sourceName: source })
+				},
+				restart: () => {
+					if (!this.legacy) this.sendCommand('restart', 'GET')
+				},
+			},
+		})
+		this.recovery.start()
+	}
+
 	stopTimers() {
+		if (this.recovery) this.recovery.stop()
 		if (this.retryTimer) {
 			clearTimeout(this.retryTimer)
 			delete this.retryTimer
@@ -88,6 +116,34 @@ class BirdDogInstance extends InstanceBase {
 				id: 'host',
 				width: 6,
 				required: true,
+			},
+			{
+				type: 'checkbox',
+				label: 'Auto-recover when the NDI feed drops and returns',
+				id: 'autoRecover',
+				width: 12,
+				default: false,
+				tooltip:
+					'If the unit loses its feed (for example ProPresenter is closed), keep retrying every 30 seconds, and re-select the source once it is back.',
+			},
+			{
+				type: 'checkbox',
+				label: 'Also restart video after the feed returns',
+				id: 'restartOnReturn',
+				width: 12,
+				default: false,
+				isVisible: (options) => !!options.autoRecover,
+				tooltip: 'Briefly blanks the picture, but clears a stuck or green video output.',
+			},
+			{
+				type: 'number',
+				label: 'Restart video every N hours (0 = never)',
+				id: 'restartHours',
+				width: 6,
+				min: 0,
+				max: 720,
+				default: 0,
+				tooltip: "Restarts the unit's video on a schedule. The picture blanks briefly each time.",
 			},
 		]
 	}
@@ -325,6 +381,7 @@ class BirdDogInstance extends InstanceBase {
 				this.device.sourceStatus = value
 				updates.source_status = value
 				this.checkFeedbacks('decodeSourceStatus')
+				this.recovery?.onStatus(value)
 			} else if (key === 'vid_res' && value && value != this.device.videoResolution) {
 				this.device.videoResolution = value
 				updates.video_resolution = value
@@ -337,6 +394,7 @@ class BirdDogInstance extends InstanceBase {
 				this.device.sourceStatus = value
 				updates.source_status = value
 				this.checkFeedbacks('decodeSourceStatus')
+				this.recovery?.onStatus(value)
 			}
 		}
 

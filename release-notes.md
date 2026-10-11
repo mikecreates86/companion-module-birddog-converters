@@ -1,6 +1,9 @@
-# 2.0.6
+# 2.1.0
 **What's new**
-- The module now writes a plain note in the Companion log every time a unit reports a change (source, connection status, resolution, frame rate), with the time. If a unit ever shows a green screen again, the log will show exactly what the unit last reported.
-- New variable "last_update" shows when the unit last reported a change.
+- New optional settings to make units recover on their own when an NDI feed drops and comes back (for example when ProPresenter is closed and reopened). All are off by default:
+  - Keep retrying every 30 seconds while the feed is missing, then re-select the source when it returns.
+  - Optionally restart the unit's video a few seconds after the feed returns.
+  - Optionally restart the unit's video every N hours.
+- Every automatic recovery is written to the Companion log in plain words.
 
-**How to install:** download `birddog-converters-2.0.6.tgz` below, then in Companion use Modules > Import module package.
+**How to install:** download `birddog-converters-2.1.0.tgz` below, then in Companion use Modules > Import module package. Then open the connection settings to turn the new options on.
