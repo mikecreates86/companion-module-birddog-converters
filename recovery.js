@@ -1,5 +1,5 @@
 // Keeps a decoder healthy when its NDI feed goes away and comes back
-// (for example when ProPresenter is closed and reopened), and can optionally
+// (for example when the sending app is closed and reopened), and can optionally
 // restart the unit's video on a schedule. Everything here is off unless enabled.
 export class SourceRecovery {
 	constructor({

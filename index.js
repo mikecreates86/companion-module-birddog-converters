@@ -124,7 +124,7 @@ class BirdDogInstance extends InstanceBase {
 				width: 12,
 				default: false,
 				tooltip:
-					'If the unit loses its feed (for example ProPresenter is closed), keep retrying every 30 seconds, and re-select the source once it is back.',
+					'If the unit loses its NDI feed, keep retrying every 30 seconds, and re-select the source once it is back.',
 			},
 			{
 				type: 'checkbox',
