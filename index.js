@@ -18,6 +18,7 @@ class BirdDogInstance extends InstanceBase {
 		this.config = config
 		this.legacy = null
 		this.device = {}
+		this.seenKeys = new Set()
 		this.destroyed = false
 		this.updateStatus('connecting')
 
@@ -302,6 +303,16 @@ class BirdDogInstance extends InstanceBase {
 
 	processWebsocket(data) {
 		let updates = {}
+
+		// Record every kind of status the unit reports, once per connection, so odd
+		// behaviour (like a green screen) can be traced back to what the unit said
+		this.seenKeys = this.seenKeys || new Set()
+		for (const [key, value] of Object.entries(data)) {
+			if (!this.seenKeys.has(key)) {
+				this.seenKeys.add(key)
+				this.log('info', `Unit reports "${key}": ${JSON.stringify(value)}`)
+			}
+		}
 		for (const [key, value] of Object.entries(data)) {
 			if (key === 'vid_str_name' && value && value != this.device.decodeSource) {
 				this.device.decodeSource = value
@@ -334,6 +345,10 @@ class BirdDogInstance extends InstanceBase {
 				this.device.videoFrameRate ? this.device.videoFrameRate : ''
 			}`
 			this.device.videoFormat = updates.video_format
+		}
+		if (Object.keys(updates).length > 0) {
+			updates.last_update = new Date().toLocaleString()
+			this.log('info', `Status change: ${JSON.stringify(updates)}`)
 		}
 		this.setVariableValues(updates)
 	}
