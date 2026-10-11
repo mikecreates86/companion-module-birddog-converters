@@ -1,9 +1,6 @@
-# 2.0.5
+# 2.0.6
 **What's new**
-- The module now reconnects to the BirdDog unit on its own and no longer piles up repeated reconnect attempts after a network drop.
-- If a unit is switched off when Companion starts, the module keeps retrying instead of giving up.
-- Requests to a unit now time out instead of hanging forever.
-- The "Current mode" variable now correctly shows Decode for original Play units (KILOVIEW-N5 hardware).
-- The "decode source name" button highlight now updates when the source changes.
+- The module now writes a plain note in the Companion log every time a unit reports a change (source, connection status, resolution, frame rate), with the time. If a unit ever shows a green screen again, the log will show exactly what the unit last reported.
+- New variable "last_update" shows when the unit last reported a change.
 
-**How to install:** download `birddog-converters-2.0.5.tgz` below, then in Companion use Modules > Import module package.
+**How to install:** download `birddog-converters-2.0.6.tgz` below, then in Companion use Modules > Import module package.

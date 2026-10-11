@@ -36,5 +36,10 @@ export function getVariables() {
 		variableId: 'device_name',
 	})
 
+	variables.push({
+		name: 'Time of the last status change reported by the unit',
+		variableId: 'last_update',
+	})
+
 	return variables
 }
