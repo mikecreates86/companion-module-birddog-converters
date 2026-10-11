@@ -10,6 +10,14 @@ This module allows you to control BirdDog NDI encoders and decoders.
 
 - Enter the IP address or hostname of the BirdDog device in the module settings
 
+### Optional self-recovery settings (all off by default)
+
+- **Auto-recover when the NDI feed drops and returns:** if the unit loses its feed (for example the sending app is closed), the module keeps retrying every 30 seconds and re-selects the source once it is back.
+- **Also restart video after the feed returns:** restarts the unit's video output a few seconds after the feed is back. The picture blanks briefly.
+- **Restart video every N hours:** restarts the unit's video on a schedule. 0 means never.
+
+Actions in the log appear as plain notes, so you can see when the module recovered a unit.
+
 ### Available actions
 
 - Change Decode Source
@@ -27,3 +35,4 @@ This module allows you to control BirdDog NDI encoders and decoders.
 - video_resolution
 - video_framerate
 - source_status
+- last_update (time of the last status change the unit reported)
