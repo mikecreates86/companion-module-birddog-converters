@@ -14,7 +14,7 @@ This module allows you to control BirdDog NDI encoders and decoders.
 
 - **Auto-recover when the NDI feed drops and returns:** if the unit loses its feed (for example the sending app is closed), the module keeps retrying every 30 seconds and re-selects the source once it is back.
 - **Also restart video after the feed returns:** restarts the unit's video output a few seconds after the feed is back. The picture blanks briefly.
-- **Restart video every N hours:** restarts the unit's video on a schedule. 0 means never.
+- **Restart video on a schedule:** restarts the unit's video every 1 to 48 hours, or never (the default).
 
 Actions in the log appear as plain notes, so you can see when the module recovered a unit.
 
