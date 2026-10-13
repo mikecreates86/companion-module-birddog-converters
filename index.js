@@ -132,8 +132,8 @@ class BirdDogInstance extends InstanceBase {
 				id: 'restartOnReturn',
 				width: 12,
 				default: false,
-				isVisible: (options) => !!options.autoRecover,
-				tooltip: 'Briefly blanks the picture, but clears a stuck or green video output.',
+				tooltip:
+					'Only used when auto-recover above is on. Briefly blanks the picture, but clears a stuck or green video output.',
 			},
 			{
 				type: 'number',
